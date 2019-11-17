@@ -3,6 +3,7 @@ package aqs;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 
 /**
@@ -20,7 +21,7 @@ public abstract class MyAqs {
     /**
      * 资源当前占用的线程
      */
-    protected volatile Thread exclusiveOwner;
+    protected volatile AtomicReference<Thread> exclusiveOwner;
 
     /**
      * 等待资源的线程集合
@@ -29,6 +30,7 @@ public abstract class MyAqs {
 
     public MyAqs(int state) {
         this.state = new AtomicInteger(state);
+        exclusiveOwner = new AtomicReference<>();
     }
 
     /**
@@ -55,7 +57,7 @@ public abstract class MyAqs {
     public final void acquireShared(int arg) {
         // 进入锁池
         waiters.offer(Thread.currentThread());
-        while (tryAcquireShared(arg) < 0) {
+        while (tryAcquireShared(arg) <= 0) {
             LockSupport.park();
         }
         // 将线程移除锁池
@@ -92,10 +94,11 @@ public abstract class MyAqs {
      * @return
      */
     public final boolean releaseShared(int arg) {
-        if (!tryReleaseShared(arg)) {
-            // 唤醒锁池里的一个线程
-            Thread thread = waiters.poll();
-            LockSupport.unpark(thread);
+        if (tryReleaseShared(arg)) {
+            // 唤醒锁池里的所有线程
+            for (Thread waiter : waiters) {
+                LockSupport.unpark(waiter);
+            }
         }
         return true;
     }
